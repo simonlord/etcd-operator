@@ -27,6 +27,7 @@ import (
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	kwatch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
 var initRetryWaitTime = 30 * time.Second
@@ -41,6 +42,8 @@ type Controller struct {
 	Config
 
 	clusters map[string]*cluster.Cluster
+
+	podLister corev1listers.PodLister
 }
 
 type Config struct {
@@ -119,9 +122,10 @@ func (c *Controller) handleClusterEvent(event *Event) (bool, error) {
 
 func (c *Controller) makeClusterConfig() cluster.Config {
 	return cluster.Config{
-		ServiceAccount: c.Config.ServiceAccount,
-		KubeCli:        c.Config.KubeCli,
-		EtcdCRCli:      c.Config.EtcdCRCli,
+		ServiceAccount:  c.Config.ServiceAccount,
+		KubeCli:         c.Config.KubeCli,
+		EtcdCRCli:       c.Config.EtcdCRCli,
+		PodLister:       c.podLister,
 	}
 }
 

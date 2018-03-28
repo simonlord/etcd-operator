@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -36,6 +37,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 var (
@@ -59,6 +62,7 @@ type Config struct {
 
 	KubeCli   kubernetes.Interface
 	EtcdCRCli versioned.Interface
+	PodLister corev1listers.PodLister
 }
 
 type Cluster struct {
@@ -391,14 +395,17 @@ func (c *Cluster) removePod(name string) error {
 	return nil
 }
 
+func selectorForCluster(c *api.EtcdCluster) labels.Selector {
+	return labels.SelectorFromSet(labels.Set{"etcd_cluster": c.Name})
+}
+
 func (c *Cluster) pollPods() (running, pending []*v1.Pod, err error) {
-	podList, err := c.config.KubeCli.Core().Pods(c.cluster.Namespace).List(k8sutil.ClusterListOpt(c.cluster.Name))
+	podList, err := c.config.PodLister.List(selectorForCluster(c.cluster))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list running pods: %v", err)
 	}
 
-	for i := range podList.Items {
-		pod := &podList.Items[i]
+	for _, pod := range podList {
 		// Avoid polling deleted pods. k8s issue where deleted pods would sometimes show the status Pending
 		// See https://github.com/coreos/etcd-operator/issues/1693
 		if pod.DeletionTimestamp != nil {
@@ -434,6 +441,10 @@ func (c *Cluster) updateMemberStatus(running []*v1.Pod) {
 		}
 		unready = append(unready, pod.Name)
 	}
+
+	// keep these sorted for being reflect.DeepEqual'd later
+	sort.Strings(ready)
+	sort.Strings(unready)
 
 	c.status.Members.Ready = ready
 	c.status.Members.Unready = unready

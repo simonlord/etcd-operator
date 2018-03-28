@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	kwatch "k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -73,7 +74,18 @@ func (c *Controller) run() {
 		DeleteFunc: c.onDeleteEtcdClus,
 	}, cache.Indexers{})
 
+	kubeInformerFactory := informers.NewFilteredSharedInformerFactory(c.Config.KubeCli, time.Hour*12, ns, nil)
+	podInformer := kubeInformerFactory.Core().V1().Pods()
+	c.podLister = podInformer.Lister()
+
 	ctx := context.TODO()
+	go kubeInformerFactory.Start(ctx.Done())
+
+	if !cache.WaitForCacheSync(ctx.Done(), podInformer.Informer().HasSynced) {
+		c.logger.Error("failed waiting for Pod Informer to sync")
+		return
+	}
+
 	// TODO: use workqueue to avoid blocking
 	informer.Run(ctx.Done())
 }
